@@ -10,7 +10,7 @@ This repository contains two packages:
 To use the code in this repository you need:
 
 - a stable Rust toolchain to build the code
-- a working Docker setup that can run *Linux* containers -- the host OS does not need to be Linux 
+- a working Docker setup that can run *Linux* containers -- the host OS does not need to be Linux
 
 ## `dns-test`
 
