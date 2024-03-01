@@ -1,4 +1,5 @@
 use std::env;
+use std::net::Ipv4Addr;
 use std::sync::mpsc;
 
 use dns_test::client::Client;
@@ -66,17 +67,22 @@ fn main() -> Result<()> {
     let roots = &[Root::new(root_ns.fqdn().clone(), root_ns.ipv4_addr())];
     println!("DONE");
 
+    let client = Client::new(&network)?;
+    if args.dnssec {
+        // this will send queries to the loopback address and fail because there's no resolver
+        // but as a side-effect it will generate the `/etc/bind.keys` file we want
+        // ignore the expected error
+        let _ = client.delv(
+            Ipv4Addr::new(127, 0, 0, 1),
+            RecordType::SOA,
+            &FQDN::ROOT,
+            &trust_anchor,
+        )?;
+    }
+
     println!("building docker image...");
     let resolver = Resolver::start(&dns_test::subject(), roots, &trust_anchor, &network)?;
     println!("DONE\n\n");
-
-    let resolver_addr = resolver.ipv4_addr();
-    let client = Client::new(&network)?;
-
-    if args.dnssec {
-        // generate `/etc/bind.keys`
-        client.delv(resolver_addr, RecordType::SOA, &FQDN::ROOT, &trust_anchor)?;
-    }
 
     let (tx, rx) = mpsc::channel();
 
@@ -103,7 +109,8 @@ fn main() -> Result<()> {
         nameservers_ns.container_id()
     );
 
-    println!("resolver's IP address: {resolver_addr}");
+    let resolver_addr = resolver.ipv4_addr();
+    println!("resolver's IP address: {resolver_addr}",);
     println!(
         "attach to this container with: `docker exec -it {} bash`\n",
         resolver.container_id()
