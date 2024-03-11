@@ -8,16 +8,16 @@ use dns_test::{Network, Resolver, Result, TrustAnchor, FQDN};
 
 fn main() -> Result<()> {
     let network = Network::new()?;
-    let peer = dns_test::peer();
+    let peer = &dns_test::PEER;
 
     println!("building docker image...");
-    let mut root_ns = NameServer::new(&peer, FQDN::ROOT, &network)?;
+    let mut root_ns = NameServer::new(peer, FQDN::ROOT, &network)?;
     println!("DONE");
 
     println!("setting up name servers...");
-    let mut com_ns = NameServer::new(&peer, FQDN::COM, &network)?;
+    let mut com_ns = NameServer::new(peer, FQDN::COM, &network)?;
 
-    let mut nameservers_ns = NameServer::new(&peer, FQDN("nameservers.com.")?, &network)?;
+    let mut nameservers_ns = NameServer::new(peer, FQDN("nameservers.com.")?, &network)?;
     nameservers_ns
         .add(Record::a(root_ns.fqdn().clone(), root_ns.ipv4_addr()))
         .add(Record::a(com_ns.fqdn().clone(), com_ns.ipv4_addr()));
@@ -50,7 +50,7 @@ fn main() -> Result<()> {
 
     let trust_anchor = TrustAnchor::from_iter([root_ksk.clone(), root_zsk.clone()]);
     println!("building docker image...");
-    let resolver = Resolver::start(&dns_test::subject(), roots, &trust_anchor, &network)?;
+    let resolver = Resolver::start(&dns_test::SUBJECT, roots, &trust_anchor, &network)?;
     println!("DONE\n\n");
 
     let resolver_addr = resolver.ipv4_addr();

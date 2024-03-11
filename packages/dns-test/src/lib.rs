@@ -1,8 +1,10 @@
 //! A test framework for all things DNS
 
 use std::borrow::Cow;
+use std::env;
 use std::path::Path;
 
+use lazy_static::lazy_static;
 use url::Url;
 
 pub use crate::container::Network;
@@ -26,7 +28,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 // TODO maybe this should be a TLS variable that each unit test (thread) can override
 const DEFAULT_TTL: u32 = 24 * 60 * 60; // 1 day
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Implementation {
     Bind,
     Hickory(Repository<'static>),
@@ -40,7 +42,7 @@ impl Implementation {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Repository<'a> {
     inner: Cow<'a, str>,
 }
@@ -72,8 +74,13 @@ impl Default for Implementation {
     }
 }
 
-pub fn subject() -> Implementation {
-    if let Ok(subject) = std::env::var("DNS_TEST_SUBJECT") {
+lazy_static! {
+    pub static ref SUBJECT: Implementation = parse_subject();
+    pub static ref PEER: Implementation = parse_peer();
+}
+
+fn parse_subject() -> Implementation {
+    if let Ok(subject) = env::var("DNS_TEST_SUBJECT") {
         if subject == "unbound" {
             return Implementation::Unbound;
         }
@@ -96,14 +103,58 @@ pub fn subject() -> Implementation {
     }
 }
 
-pub fn peer() -> Implementation {
-    if let Ok(subject) = std::env::var("DNS_TEST_PEER") {
-        match subject.as_str() {
+fn parse_peer() -> Implementation {
+    if let Ok(peer) = env::var("DNS_TEST_PEER") {
+        match peer.as_str() {
             "unbound" => Implementation::Unbound,
             "bind" => Implementation::Bind,
-            _ => panic!("`{subject}` is not supported as a test peer implementation"),
+            _ => panic!("`{peer}` is not supported as a test peer implementation"),
         }
     } else {
         Implementation::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+
+    use super::*;
+
+    impl PartialEq for Implementation {
+        fn eq(&self, other: &Self) -> bool {
+            match (self, other) {
+                (Self::Hickory(_), Self::Hickory(_)) => true,
+                _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+            }
+        }
+    }
+
+    #[test]
+    fn immutable_subject() {
+        let before = super::SUBJECT.clone();
+        let newval = if before == Implementation::Unbound {
+            "bind"
+        } else {
+            "unbound"
+        };
+        env::set_var("DNS_TEST_SUBJECT", newval);
+
+        let after = super::SUBJECT.clone();
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn immutable_peer() {
+        let before = super::PEER.clone();
+        let newval = if before == Implementation::Unbound {
+            "bind"
+        } else {
+            "unbound"
+        };
+        env::set_var("DNS_TEST_PEER", newval);
+
+        let after = super::PEER.clone();
+        assert_eq!(before, after);
     }
 }
