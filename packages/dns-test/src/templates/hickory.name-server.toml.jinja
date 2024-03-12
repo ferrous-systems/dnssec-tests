@@ -2,3 +2,11 @@
 zone = "{{ fqdn }}"
 zone_type = "Primary"
 file = "/etc/zones/main.zone"
+enable_dnssec = {{ use_dnssec }}
+
+{%if use_dnssec %}
+[[zones.keys]]
+key_path = "/tmp/private.pem"
+algorithm = "RSASHA256"
+is_zone_signing_key = true
+{% endif %}
