@@ -4,7 +4,6 @@ use dns_test::record::{Record, RecordType};
 use dns_test::{Network, Result, FQDN};
 
 #[test]
-#[ignore]
 fn rrsig_in_answer_section() -> Result<()> {
     let network = Network::new()?;
 
@@ -33,7 +32,6 @@ fn rrsig_in_answer_section() -> Result<()> {
 }
 
 #[test]
-#[ignore]
 fn rrsig_in_authority_section() -> Result<()> {
     let network = Network::new()?;
 
