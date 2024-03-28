@@ -20,10 +20,6 @@ impl TrustAnchor {
         self
     }
 
-    pub(crate) fn keys(&self) -> &[DNSKEY] {
-        &self.keys
-    }
-
     /// formats the `TrustAnchor` in the format `delv` expects
     pub(super) fn delv(&self) -> String {
         let mut buf = "trust-anchors {".to_string();

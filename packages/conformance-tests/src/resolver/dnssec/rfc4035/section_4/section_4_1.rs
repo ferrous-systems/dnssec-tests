@@ -3,15 +3,19 @@ use dns_test::name_server::NameServer;
 use dns_test::record::RecordType;
 use dns_test::tshark::{Capture, Direction};
 use dns_test::zone_file::Root;
-use dns_test::{Network, Resolver, Result, FQDN};
+use dns_test::{Network, Resolver, Result, TrustAnchor, FQDN};
 
 #[test]
 #[ignore]
 fn edns_support() -> Result<()> {
     let network = &Network::new()?;
     let ns = NameServer::new(&dns_test::peer(), FQDN::ROOT, network)?.start()?;
-    let resolver = Resolver::new(network, Root::new(ns.fqdn().clone(), ns.ipv4_addr()))
-        .start(&dns_test::subject())?;
+    let resolver = Resolver::start(
+        &dns_test::subject(),
+        &[Root::new(ns.fqdn().clone(), ns.ipv4_addr())],
+        &TrustAnchor::empty(),
+        network,
+    )?;
 
     let mut tshark = resolver.eavesdrop()?;
 
