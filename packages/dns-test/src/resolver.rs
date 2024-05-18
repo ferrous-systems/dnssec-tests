@@ -2,6 +2,8 @@ use core::fmt::Write;
 use std::net::Ipv4Addr;
 
 use crate::container::{Child, Container, Network};
+use crate::implementation::{Config, Role};
+use crate::record::DNSKEY;
 use crate::trust_anchor::TrustAnchor;
 use crate::tshark::Tshark;
 use crate::zone_file::Root;
@@ -10,68 +12,18 @@ use crate::{Implementation, Result};
 pub struct Resolver {
     container: Container,
     child: Child,
+    implementation: Implementation,
 }
 
 impl Resolver {
-    /// Starts a DNS server in the recursive resolver role
-    ///
-    /// This server is not an authoritative name server; it does not server a zone file to clients
-    ///
-    /// # Panics
-    ///
-    /// This constructor panics if `roots` is an empty slice
-    pub fn start(
-        implementation: &Implementation,
-        roots: &[Root],
-        trust_anchor: &TrustAnchor,
-        network: &Network,
-    ) -> Result<Self> {
-        const TRUST_ANCHOR_FILE: &str = "/etc/trusted-key.key";
-
-        assert!(
-            !roots.is_empty(),
-            "must configure at least one local root server"
-        );
-
-        let image = implementation.clone().into();
-        let container = Container::run(&image, network)?;
-
-        let mut hints = String::new();
-        for root in roots {
-            writeln!(hints, "{root}").unwrap();
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(network: &Network, root: Root) -> ResolverSettings {
+        ResolverSettings {
+            ede: false,
+            network: network.clone(),
+            roots: vec![root],
+            trust_anchor: TrustAnchor::empty(),
         }
-
-        let use_dnssec = !trust_anchor.is_empty();
-        match implementation {
-            Implementation::Unbound => {
-                container.cp("/etc/unbound/root.hints", &hints)?;
-
-                container.cp(
-                    "/etc/unbound/unbound.conf",
-                    &unbound_conf(use_dnssec, network.netmask()),
-                )?;
-            }
-
-            Implementation::Hickory { .. } => {
-                container.status_ok(&["mkdir", "-p", "/etc/hickory"])?;
-
-                container.cp("/etc/hickory/root.hints", &hints)?;
-
-                container.cp("/etc/named.toml", &hickory_conf(use_dnssec))?;
-            }
-        }
-
-        if use_dnssec {
-            container.cp(TRUST_ANCHOR_FILE, &trust_anchor.to_string())?;
-        }
-
-        let command: &[_] = match implementation {
-            Implementation::Unbound => &["unbound", "-d"],
-            Implementation::Hickory { .. } => &["hickory-dns", "-d"],
-        };
-        let child = container.spawn(command)?;
-
-        Ok(Self { child, container })
     }
 
     pub fn eavesdrop(&self) -> Result<Tshark> {
@@ -88,7 +40,7 @@ impl Resolver {
 
     /// gracefully terminates the name server collecting all logs
     pub fn terminate(self) -> Result<String> {
-        let pidfile = "/run/unbound.pid";
+        let pidfile = self.implementation.pidfile(Role::Resolver);
         let kill = format!(
             "test -f {pidfile} || sleep 1
 kill -TERM $(cat {pidfile})"
@@ -96,8 +48,13 @@ kill -TERM $(cat {pidfile})"
         self.container.status_ok(&["sh", "-c", &kill])?;
         let output = self.child.wait()?;
 
-        if !output.status.success() {
-            return Err("could not terminate the `unbound` process".into());
+        // the hickory-dns binary does not do signal handling so it won't shut down gracefully; we
+        // will still get some logs so we'll ignore the fact that it fails to shut down ...
+        let is_hickory = matches!(self.implementation, Implementation::Hickory(_));
+        if !is_hickory && !output.status.success() {
+            return Err(
+                format!("could not terminate the `{}` process", self.implementation).into(),
+            );
         }
 
         assert!(
@@ -108,34 +65,144 @@ kill -TERM $(cat {pidfile})"
     }
 }
 
-fn unbound_conf(use_dnssec: bool, netmask: &str) -> String {
-    minijinja::render!(include_str!("templates/unbound.conf.jinja"), use_dnssec => use_dnssec, netmask => netmask)
+pub struct ResolverSettings {
+    /// Extended DNS Errors (RFC8914)
+    ede: bool,
+    network: Network,
+    roots: Vec<Root>,
+    trust_anchor: TrustAnchor,
 }
 
-fn hickory_conf(use_dnssec: bool) -> String {
-    minijinja::render!(include_str!("templates/hickory.resolver.toml.jinja"), use_dnssec => use_dnssec)
+impl ResolverSettings {
+    /// Starts a DNS server in the recursive resolver role
+    ///
+    /// This server is not an authoritative name server; it does not serve a zone file to clients
+    pub fn start(&self, implementation: &Implementation) -> Result<Resolver> {
+        let image = implementation.clone().into();
+        let container = Container::run(&image, &self.network)?;
+
+        let mut hints = String::new();
+        for root in &self.roots {
+            writeln!(hints, "{root}").unwrap();
+        }
+
+        container.cp("/etc/root.hints", &hints)?;
+
+        let use_dnssec = !self.trust_anchor.is_empty();
+        let config = Config::Resolver {
+            use_dnssec,
+            netmask: self.network.netmask(),
+            ede: self.ede,
+        };
+        container.cp(
+            implementation.conf_file_path(config.role()),
+            &implementation.format_config(config),
+        )?;
+
+        if use_dnssec {
+            let path = if implementation.is_bind() {
+                "/etc/bind/bind.keys"
+            } else {
+                "/etc/trusted-key.key"
+            };
+
+            let contents = if implementation.is_bind() {
+                self.trust_anchor.delv()
+            } else {
+                self.trust_anchor.to_string()
+            };
+
+            container.cp(path, &contents)?;
+        }
+
+        let child = container.spawn(implementation.cmd_args(config.role()))?;
+
+        Ok(Resolver {
+            child,
+            container,
+            implementation: implementation.clone(),
+        })
+    }
+
+    /// Enables the Extended DNS Errors (RFC8914) feature
+    pub fn extended_dns_errors(&mut self) -> &mut Self {
+        self.ede = true;
+        self
+    }
+
+    /// Adds a root hint
+    pub fn root(&mut self, root: Root) -> &mut Self {
+        self.roots.push(root);
+        self
+    }
+
+    /// Adds a DNSKEY record to the trust anchor
+    pub fn trust_anchor_key(&mut self, key: DNSKEY) -> &mut Self {
+        self.trust_anchor.add(key.clone());
+        self
+    }
+
+    /// Adds all the keys in the `other` trust anchor to ours
+    pub fn trust_anchor(&mut self, other: &TrustAnchor) -> &mut Self {
+        for key in other.keys() {
+            self.trust_anchor.add(key.clone());
+        }
+        self
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{name_server::NameServer, FQDN};
+    use crate::{name_server::NameServer, Repository, FQDN};
 
     use super::*;
 
     #[test]
-    fn terminate_works() -> Result<()> {
+    fn terminate_unbound_works() -> Result<()> {
         let network = Network::new()?;
         let ns = NameServer::new(&Implementation::Unbound, FQDN::ROOT, &network)?.start()?;
-        let resolver = Resolver::start(
-            &Implementation::Unbound,
-            &[Root::new(ns.fqdn().clone(), ns.ipv4_addr())],
-            &TrustAnchor::empty(),
-            &network,
-        )?;
+        let resolver = Resolver::new(&network, Root::new(ns.fqdn().clone(), ns.ipv4_addr()))
+            .start(&Implementation::Unbound)?;
         let logs = resolver.terminate()?;
 
         eprintln!("{logs}");
         assert!(logs.contains("start of service"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn terminate_bind_works() -> Result<()> {
+        let network = Network::new()?;
+        let ns = NameServer::new(&Implementation::Unbound, FQDN::ROOT, &network)?.start()?;
+        let resolver = Resolver::new(&network, Root::new(ns.fqdn().clone(), ns.ipv4_addr()))
+            .start(&Implementation::Bind)?;
+        let logs = resolver.terminate()?;
+
+        eprintln!("{logs}");
+        assert!(logs.contains("starting BIND"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn terminate_hickory_works() -> Result<()> {
+        let network = Network::new()?;
+        let ns = NameServer::new(&Implementation::Unbound, FQDN::ROOT, &network)?.start()?;
+        let resolver = Resolver::new(&network, Root::new(ns.fqdn().clone(), ns.ipv4_addr()))
+            .start(&Implementation::Hickory(Repository(
+                "https://github.com/hickory-dns/hickory-dns",
+            )))?;
+        let logs = resolver.terminate()?;
+
+        eprintln!("{logs}");
+        let mut found = false;
+        for line in logs.lines() {
+            if line.contains("Hickory DNS") && line.contains("starting") {
+                found = true;
+            }
+        }
+        assert!(found);
 
         Ok(())
     }

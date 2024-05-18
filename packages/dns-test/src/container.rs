@@ -22,6 +22,7 @@ const PACKAGE_NAME: &str = env!("CARGO_PKG_NAME");
 
 #[derive(Clone)]
 pub enum Image {
+    Bind,
     Client,
     Hickory(Repository<'static>),
     Unbound,
@@ -30,15 +31,21 @@ pub enum Image {
 impl Image {
     fn dockerfile(&self) -> &'static str {
         match self {
-            Self::Unbound => include_str!("docker/unbound.Dockerfile"),
-            Self::Hickory { .. } => include_str!("docker/hickory.Dockerfile"),
+            Self::Bind => include_str!("docker/bind.Dockerfile"),
             Self::Client => include_str!("docker/client.Dockerfile"),
+            Self::Hickory { .. } => include_str!("docker/hickory.Dockerfile"),
+            Self::Unbound => include_str!("docker/unbound.Dockerfile"),
         }
     }
 
     fn once(&self) -> &'static Once {
         match self {
-            Self::Client { .. } => {
+            Self::Bind => {
+                static BIND_ONCE: Once = Once::new();
+                &BIND_ONCE
+            }
+
+            Self::Client => {
                 static CLIENT_ONCE: Once = Once::new();
                 &CLIENT_ONCE
             }
@@ -48,7 +55,7 @@ impl Image {
                 &HICKORY_ONCE
             }
 
-            Self::Unbound { .. } => {
+            Self::Unbound => {
                 static UNBOUND_ONCE: Once = Once::new();
                 &UNBOUND_ONCE
             }
@@ -59,6 +66,7 @@ impl Image {
 impl From<Implementation> for Image {
     fn from(implementation: Implementation) -> Self {
         match implementation {
+            Implementation::Bind => Self::Bind,
             Implementation::Unbound => Self::Unbound,
             Implementation::Hickory(repo) => Self::Hickory(repo),
         }
@@ -69,6 +77,7 @@ impl fmt::Display for Image {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Self::Client => "client",
+            Self::Bind => "bind",
             Self::Hickory { .. } => "hickory",
             Self::Unbound => "unbound",
         };
@@ -148,7 +157,7 @@ impl Container {
             id,
             name,
             ipv4_addr,
-            _network: network.clone(),
+            network: network.clone(),
         };
         Ok(Self {
             inner: Arc::new(inner),
@@ -241,6 +250,10 @@ impl Container {
     pub fn id(&self) -> &str {
         &self.inner.id
     }
+
+    pub(crate) fn network(&self) -> &Network {
+        &self.inner.network
+    }
 }
 
 fn verbose_docker_build() -> bool {
@@ -273,7 +286,7 @@ struct Inner {
     id: String,
     // TODO probably also want the IPv6 address
     ipv4_addr: Ipv4Addr,
-    _network: Network,
+    network: Network,
 }
 
 /// NOTE unlike `std::process::Child`, the drop implementation of this type will `kill` the
