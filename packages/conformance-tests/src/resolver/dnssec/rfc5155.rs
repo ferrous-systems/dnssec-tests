@@ -29,10 +29,8 @@ fn covers(record: &NSEC3, hash: &str) -> bool {
         && record.fqdn.labels().next().unwrap().to_uppercase().as_str() < hash
 }
 
-#[ignore]
 #[test]
 fn proof_of_non_existence_with_nsec3_records() -> Result<()> {
-    let peer = dns_test::peer();
     let network = Network::new()?;
 
     let alice_fqdn = FQDN("alice.nameservers.com.")?;
@@ -43,7 +41,7 @@ fn proof_of_non_existence_with_nsec3_records() -> Result<()> {
     let wildcard_hash = "M417220KKVJDM7CHD6QVUV4TGHDU2N2K"; /* *.nameservers.com */
     let nameservers_hash = "7M2FCI51VUC2E5RIBDPTVJ6S08EMMR3O"; /* nameservers.com. */
 
-    let mut leaf_ns = NameServer::new(&peer, FQDN::NAMESERVERS, &network)?;
+    let mut leaf_ns = NameServer::new(&dns_test::PEER, FQDN::NAMESERVERS, &network)?;
     leaf_ns
         .add(Record::a(alice_fqdn.clone(), Ipv4Addr::new(1, 2, 3, 4)))
         .add(Record::a(charlie_fqdn.clone(), Ipv4Addr::new(1, 2, 3, 5)));
@@ -73,6 +71,14 @@ fn proof_of_non_existence_with_nsec3_records() -> Result<()> {
                 "primary4.nameservers.com." => "0RM17SJJI0C51PADDIFG9LI8K2S04EE9",
                 "primary5.nameservers.com." => "546PPSKSPN8DOKTTA9MASB0TM06I72GD",
                 "primary6.nameservers.com." => "40PTL9S01ERIF3E05RERHM419K0465GB",
+                "primary7.nameservers.com." => "G8O54KH0MJNTDE1IFQOBSLNRA5G7PGJ0",
+                "primary8.nameservers.com." => "FRMTGMJ1QH91I2QHU61BTJNFKS39UQ2D",
+                "primary9.nameservers.com." => "6RJVT7UR167JB2296JTV2VG9P8LJK1KG",
+                "primary10.nameservers.com." => "1CN3HD3QPK3R53P3L13FL91KSML0LT13",
+                "primary11.nameservers.com." => "6TEE5C0TA2FU4T2KA9R3CT749IVDH0R2",
+                "primary12.nameservers.com." => "0DJ0I4F1D7AANKJQ5RB9CLFSALMC636P",
+                "primary13.nameservers.com." => "QBHIT7FBP5GM6K1NPK23KIKFRFLESB59",
+                "primary14.nameservers.com." => "OAIN54SNHJ76M5ATNE9U21DMVC0QIU6L",
                 ns => panic!("Unexpected nameserver: {ns}"),
             };
 
@@ -87,7 +93,7 @@ fn proof_of_non_existence_with_nsec3_records() -> Result<()> {
     let trust_anchor = &trust_anchor.unwrap();
     let resolver = Resolver::new(&network, root)
         .trust_anchor(trust_anchor)
-        .start(&dns_test::subject())?;
+        .start(&dns_test::SUBJECT)?;
     let resolver_addr = resolver.ipv4_addr();
 
     let client = Client::new(&network)?;
