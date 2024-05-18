@@ -77,6 +77,10 @@ impl FQDN {
             .filter(|label| !label.is_empty())
             .count()
     }
+
+    pub fn labels(&self) -> impl Iterator<Item = &str> {
+        self.inner.split('.')
+    }
 }
 
 impl FromStr for FQDN {
