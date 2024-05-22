@@ -41,6 +41,14 @@ fn proof_of_non_existence_with_nsec3_records() -> Result<()> {
     let bob_fqdn = FQDN("bob.nameservers.com.")?;
     let charlie_fqdn = FQDN("charlie.nameservers.com.")?;
 
+    // To compute these hashes refer to [Section 5 of RFC 5515](https://datatracker.ietf.org/doc/html/rfc5155#section-5)
+    // or install `dnspython` and then run:
+    //
+    // ```python
+    // import dns.dnssec
+    //
+    // dns.dnssec.nsec3_hash(domain, salt="", iterations=1, algorithm="SHA1")
+    // ```
     let bob_hash = "9AU9KOU2HVABPTPB7D3AQBH57QPLNDI6"; /* bob.namesevers.com. */
     let wildcard_hash = "M417220KKVJDM7CHD6QVUV4TGHDU2N2K"; /* *.nameservers.com */
     let nameservers_hash = "7M2FCI51VUC2E5RIBDPTVJ6S08EMMR3O"; /* nameservers.com. */
