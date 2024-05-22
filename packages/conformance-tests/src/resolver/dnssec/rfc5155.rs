@@ -91,6 +91,22 @@ fn proof_of_non_existence_with_nsec3_records() -> Result<()> {
                 "primary12.nameservers.com." => "0DJ0I4F1D7AANKJQ5RB9CLFSALMC636P",
                 "primary13.nameservers.com." => "QBHIT7FBP5GM6K1NPK23KIKFRFLESB59",
                 "primary14.nameservers.com." => "OAIN54SNHJ76M5ATNE9U21DMVC0QIU6L",
+                "primary15.nameservers.com." => "4VNB3RBR9DRCL9FUD30R1B70AKBOQ2VR",
+                "primary16.nameservers.com." => "F55MMTN4LRTVELLVHP7C7VP8HKR5EGGR",
+                "primary17.nameservers.com." => "69EQOTFRBMV1VOSVI5JI45HAAFKM687U",
+                "primary18.nameservers.com." => "VPFCG36N058VJJHREDI109TLNN3ULTAL",
+                "primary19.nameservers.com." => "NGMTQB48BJ52E6VNPV7B4UQ43PIMV63D",
+                "primary20.nameservers.com." => "VKMT6Q9OO8UT7UH6L5TNU441J9DE69GM",
+                "primary21.nameservers.com." => "M0S7C0H6BNVE984C1MPD57BRAQ6NFC5F",
+                "primary22.nameservers.com." => "925I7PPN55AHIREP0H4N24GT99EKFIU2",
+                "primary23.nameservers.com." => "530REIRKSLRIVRS7S695PNGEM9VBC8K7",
+                "primary24.nameservers.com." => "C8BU7CCSPTSOD9T8PLH5I1PK95OVN0HK",
+                "primary25.nameservers.com." => "TGIMV2IN9Q28K984IDH9TK7VK2G9J6NP",
+                "primary26.nameservers.com." => "552V9A7DP75FLS9FU9O9T8AOJM8AAI5M",
+                "primary27.nameservers.com." => "5V3AV5U0L1G265IGO4D673K50UO6G8MI",
+                "primary28.nameservers.com." => "CK1ML666D0KQKU9ESTSOM6P32HSDGB60",
+                "primary29.nameservers.com." => "UOBH9BHGQ2756GG6IUM6FILVDSAKJ70C",
+                "primary30.nameservers.com." => "MK7H6U1V39MHIDC6RPKJORAU3VCH36LU",
                 ns => panic!("Unexpected nameserver: {ns}"),
             };
 
@@ -132,7 +148,7 @@ fn proof_of_non_existence_with_nsec3_records() -> Result<()> {
         assert_eq!(record.hash_alg, 1);
         // Check that the salt is empty (dig puts `-` in the salt field when it is empty).
         assert_eq!(record.salt, "-");
-        // Check that the number of iterations is 1. 
+        // Check that the number of iterations is 1.
         assert_eq!(record.iterations, 1);
     }
 
