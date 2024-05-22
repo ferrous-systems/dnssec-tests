@@ -8,7 +8,7 @@ use dns_test::{
 };
 
 /// Find the index of the element immediately previous to `needle` in `haystack`.
-fn find_prev(needle: &str, haystack: &Vec<&str>) -> usize {
+fn find_prev(needle: &str, haystack: &[&str]) -> usize {
     assert!(!haystack.is_empty());
 
     let (Ok(index) | Err(index)) = haystack.binary_search(&needle);
@@ -19,7 +19,7 @@ fn find_prev(needle: &str, haystack: &Vec<&str>) -> usize {
 }
 
 /// Find the index of the element immediately next to `needle` in `haystack`.
-fn find_next(needle: &str, haystack: &Vec<&str>) -> usize {
+fn find_next(needle: &str, haystack: &[&str]) -> usize {
     assert!(!haystack.is_empty());
 
     let (Ok(index) | Err(index)) = haystack.binary_search(&needle);
