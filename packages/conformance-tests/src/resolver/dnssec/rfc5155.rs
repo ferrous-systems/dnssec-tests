@@ -119,6 +119,15 @@ fn proof_of_non_existence_with_nsec3_records() -> Result<()> {
         })
         .collect::<Vec<_>>();
 
+    for record in &nsec3_rrs {
+        // Check that the hashing function is SHA-1.
+        assert_eq!(record.hash_alg, 1);
+        // Check that the salt is empty (dig puts `-` in the salt field when it is empty).
+        assert_eq!(record.salt, "-");
+        // Check that the number of iterations is 1. 
+        assert_eq!(record.iterations, 1);
+    }
+
     // Closest encloser RR: Must match the closest encloser of bob.nameservers.com.
     //
     // The closest encloser must be nameservers.com. as it is the closest existing ancestor of
