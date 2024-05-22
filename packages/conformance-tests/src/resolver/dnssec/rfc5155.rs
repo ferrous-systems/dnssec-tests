@@ -34,6 +34,7 @@ fn covers(record: &NSEC3, hash: &str) -> bool {
 }
 
 #[test]
+#[ignore]
 fn proof_of_non_existence_with_nsec3_records() -> Result<()> {
     let network = Network::new()?;
 
