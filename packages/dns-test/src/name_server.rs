@@ -220,6 +220,7 @@ impl NameServer<Stopped> {
         const KSK_BITS: usize = 2048;
         const ALGORITHM: &str = "RSASHA1-NSEC3-SHA1";
 
+        let is_hickory = self.implementation.is_hickory();
         let Self {
             container,
             zone_file,
@@ -233,47 +234,89 @@ impl NameServer<Stopped> {
 
         let zone = zone_file.origin();
 
-        let zsk_keygen =
-            format!("cd {ZONES_DIR} && ldns-keygen -a {ALGORITHM} -b {ZSK_BITS} {zone}");
-        let zsk_filename = container.stdout(&["sh", "-c", &zsk_keygen])?;
-        let zsk_path = format!("{ZONES_DIR}/{zsk_filename}.key");
-        let zsk: zone_file::DNSKEY = container.stdout(&["cat", &zsk_path])?.parse()?;
+        let state = if is_hickory {
+            // automatic on-the-fly signing
 
-        let ksk_keygen =
-            format!("cd {ZONES_DIR} && ldns-keygen -k -a {ALGORITHM} -b {KSK_BITS} {zone}");
-        let ksk_filename = container.stdout(&["sh", "-c", &ksk_keygen])?;
-        let ksk_path = format!("{ZONES_DIR}/{ksk_filename}.key");
-        let ksk: zone_file::DNSKEY = container.stdout(&["cat", &ksk_path])?.parse()?;
+            // generate the ZSK
+            container.status_ok(&[
+                "openssl",
+                "genrsa",
+                "-out",
+                "/tmp/private.pem",
+                &ZSK_BITS.to_string(),
+            ])?;
 
-        // -n = use NSEC3 instead of NSEC
-        // -p = set the opt-out flag on all nsec3 rrs
-        let signzone = format!(
-            "cd {ZONES_DIR} && ldns-signzone -n -p {ZONE_FILENAME} {zsk_filename} {ksk_filename}"
-        );
-        container.status_ok(&["sh", "-c", &signzone])?;
+            // FIXME produce DS and DNSKEY records
+            let ds = DS {
+                zone: zone.clone(),
+                ttl: 0,
+                key_tag: 0,
+                algorithm: 0,
+                digest_type: 0,
+                digest: String::new(),
+            };
+            let zsk = record::DNSKEY {
+                zone: zone.clone(),
+                ttl: 0,
+                flags: 0,
+                protocol: 0,
+                algorithm: 0,
+                public_key: String::new(),
+            };
+            // XXX no KSK in this case?
+            let ksk = zsk.clone();
+            // XXX there's no `signed` zone file in this branch
+            Signed {
+                ds,
+                signed: zone_file.clone(),
+                zsk,
+                ksk,
+            }
+        } else {
+            // manual ahead-of-time signing
+            let zsk_keygen =
+                format!("cd {ZONES_DIR} && ldns-keygen -a {ALGORITHM} -b {ZSK_BITS} {zone}");
+            let zsk_filename = container.stdout(&["sh", "-c", &zsk_keygen])?;
+            let zsk_path = format!("{ZONES_DIR}/{zsk_filename}.key");
+            let zsk: zone_file::DNSKEY = container.stdout(&["cat", &zsk_path])?.parse()?;
 
-        // TODO do we want to make the hashing algorithm configurable?
-        // -2 = use SHA256 for the DS hash
-        let key2ds = format!("cd {ZONES_DIR} && ldns-key2ds -n -2 {ZONE_FILENAME}.signed");
-        let ds: DS = container.stdout(&["sh", "-c", &key2ds])?.parse()?;
+            let ksk_keygen =
+                format!("cd {ZONES_DIR} && ldns-keygen -k -a {ALGORITHM} -b {KSK_BITS} {zone}");
+            let ksk_filename = container.stdout(&["sh", "-c", &ksk_keygen])?;
+            let ksk_path = format!("{ZONES_DIR}/{ksk_filename}.key");
+            let ksk: zone_file::DNSKEY = container.stdout(&["cat", &ksk_path])?.parse()?;
 
-        let signed: ZoneFile = container
-            .stdout(&["cat", &format!("{zone_file_path}.signed")])?
-            .parse()?;
+            // -n = use NSEC3 instead of NSEC
+            // -p = set the opt-out flag on all nsec3 rrs
+            let signzone = format!(
+                "cd {ZONES_DIR} && ldns-signzone -n -p {ZONE_FILENAME} {zsk_filename} {ksk_filename}"
+            );
+            container.status_ok(&["sh", "-c", &signzone])?;
 
-        let ttl = zone_file.soa.ttl;
+            // TODO do we want to make the hashing algorithm configurable?
+            // -2 = use SHA256 for the DS hash
+            let key2ds = format!("cd {ZONES_DIR} && ldns-key2ds -n -2 {ZONE_FILENAME}.signed");
+            let ds: DS = container.stdout(&["sh", "-c", &key2ds])?.parse()?;
 
-        Ok(NameServer {
-            container,
-            implementation,
-            zone_file,
-            state: Signed {
+            let signed: ZoneFile = container
+                .stdout(&["cat", &format!("{zone_file_path}.signed")])?
+                .parse()?;
+
+            let ttl = zone_file.soa.ttl;
+            Signed {
                 ds,
                 signed,
                 // inherit SOA's TTL value
                 ksk: ksk.with_ttl(ttl),
                 zsk: zsk.with_ttl(ttl),
-            },
+            }
+        };
+
+        Ok(NameServer {
+            container,
+            implementation,
+            zone_file,
+            state,
         })
     }
 
@@ -288,6 +331,7 @@ impl NameServer<Stopped> {
 
         let config = Config::NameServer {
             origin: zone_file.origin(),
+            use_dnssec: false,
         };
 
         container.cp(
@@ -333,6 +377,7 @@ impl NameServer<Signed> {
 
         let config = Config::NameServer {
             origin: zone_file.origin(),
+            use_dnssec: true,
         };
         container.cp(
             implementation.conf_file_path(config.role()),
