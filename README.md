@@ -1,3 +1,9 @@
+# This repository has been merged into [hickory-dns] and this copy won't receive further updates
+
+[hickory-dns]: https://github.com/hickory-dns/hickory-dns/
+
+---
+
 # `dnssec-tests`
 
 This repository contains two packages:
